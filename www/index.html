@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d6286">
+<title>Verifica FWA</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="testa">
+  <img src="icon.svg" alt="" class="logo">
+  <div><b>Verifica FWA</b><span id="passo-n">Passo 1 di 5</span></div>
+</header>
+<div class="barra" aria-hidden="true"><i id="barra"></i></div>
+
+<main>
+  <!-- 0. introduzione -->
+  <section class="schermo" data-s="0">
+    <h1>Vediamo da dove arriva il segnale a casa tua</h1>
+    <p class="intro">L'antenna del servizio deve vedere il ripetitore. In due minuti raccogliamo quattro informazioni: le useremo per dirti subito se l'installazione è possibile e dove conviene metterla.</p>
+    <ol class="elenco">
+      <li><b>Posizione</b> della casa</li>
+      <li><b>Piano</b> dell'abitazione</li>
+      <li><b>Tetto</b> o lastrico disponibile</li>
+      <li><b>Balconi</b> e da che parte guardano</li>
+    </ol>
+    <label class="campo">Codice dell'ordine <small>(se ce l'hai)</small><input id="codice" autocomplete="off" inputmode="text" placeholder="es. FWA-123456"></label>
+    <button class="primario" data-vai="1">Inizia</button>
+    <p class="nota">Servono la posizione e la bussola del telefono. I dati restano sul telefono finché non scegli di inviarli.</p>
+  </section>
+
+  <!-- 1. posizione -->
+  <section class="schermo" data-s="1" hidden>
+    <h1>Dove si trova la casa</h1>
+    <p>Mettiti vicino a una finestra o sul balcone: il GPS dentro casa sbaglia di più.</p>
+    <div class="riquadro gps">
+      <div class="gps-stato" id="gps-stato">Posizione non ancora rilevata</div>
+      <div class="gps-num" id="gps-num">—</div>
+      <div class="precisione"><i id="gps-barra"></i></div>
+      <small id="gps-acc"></small>
+    </div>
+    <button class="secondario" id="gps-avvia">Rileva la posizione</button>
+    <button class="primario" id="gps-ok" disabled>Usa questa posizione</button>
+    <p class="nota" id="gps-nota">Aspetta che la precisione scenda sotto i 10 m (al massimo 30 m).</p>
+  </section>
+
+  <!-- 2. piano -->
+  <section class="schermo" data-s="2" hidden>
+    <h1>A che piano abiti?</h1>
+    <p>Conta il piano terra come 0.</p>
+    <div class="contatore">
+      <button class="tondo" id="piano-meno" aria-label="Un piano in meno">−</button>
+      <output id="piano" aria-live="polite">0</output>
+      <button class="tondo" id="piano-piu" aria-label="Un piano in più">+</button>
+    </div>
+    <p class="piano-nome" id="piano-nome">piano terra</p>
+    <label class="campo">Quanti piani ha l'edificio? <small>(facoltativo)</small><input id="piani-ed" type="number" min="1" max="40" inputmode="numeric" placeholder="es. 5"></label>
+    <button class="primario" data-vai="3">Avanti</button>
+  </section>
+
+  <!-- 3. tetto -->
+  <section class="schermo" data-s="3" hidden>
+    <h1>Si può installare sul tetto?</h1>
+    <p>Sul tetto o sul lastrico solare l'antenna vede più lontano. Serve poterci salire e, in condominio, il permesso dell'amministratore.</p>
+    <div class="scelte" role="radiogroup" aria-label="Tetto disponibile" id="tetto">
+      <button role="radio" aria-checked="false" data-v="si">Sì, è disponibile</button>
+      <button role="radio" aria-checked="false" data-v="no">No</button>
+      <button role="radio" aria-checked="false" data-v="non_so">Non lo so</button>
+    </div>
+    <div class="foto" id="tetto-foto" hidden>
+      <p class="domanda">Foto dal tetto <small>(facoltativa)</small></p>
+      <p class="nota">Dal punto dove si metterebbe l'antenna, fotografa verso l'esterno: palazzi, alberi o colline davanti aiutano il tecnico a capire se il segnale passa.</p>
+      <img class="foto-img" alt="" hidden>
+      <div class="foto-az">
+        <label class="secondario foto-bt"><span class="foto-t">Scatta una foto</span><input class="nascosto" type="file" accept="image/*" capture="environment"></label>
+        <label class="testo foto-gal">Scegli dalla galleria<input class="nascosto" type="file" accept="image/*"></label>
+        <button type="button" class="testo foto-via" hidden>Togli la foto</button>
+      </div>
+      <p class="nota foto-stato" aria-live="polite"></p>
+    </div>
+    <button class="primario" id="tetto-ok" disabled>Avanti</button>
+  </section>
+
+  <!-- 4. balconi -->
+  <section class="schermo" data-s="4" hidden>
+    <h1>I tuoi balconi</h1>
+    <p>Per ogni balcone (o terrazzo, o finestra dove si potrebbe fissare l'antenna) misuriamo da che parte guarda.</p>
+    <ul class="balconi" id="balconi"></ul>
+    <button class="secondario" id="bal-nuovo">+ Misura un balcone</button>
+    <button class="primario" id="bal-fine">Ho finito</button>
+    <button class="testo" id="bal-nessuno">Non ho balconi</button>
+  </section>
+
+  <!-- 4b. misura con la bussola -->
+  <section class="schermo" data-s="5" hidden>
+    <h1 id="mis-tit">Balcone 1</h1>
+    <ol class="istruzioni">
+      <li>Esci sul balcone e mettiti con la schiena alla casa.</li>
+      <li>Tieni il telefono in piano, a schermo in su, con la parte alta che punta <b>fuori</b>, dritto davanti a te.</li>
+      <li>Stai lontano dalla ringhiera di ferro e resta fermo finché la lancetta si stabilizza.</li>
+    </ol>
+    <div class="bussola">
+      <svg viewBox="0 0 200 200" aria-hidden="true">
+        <g id="rosa">
+          <circle cx="100" cy="100" r="92" class="anello"/>
+          <g class="tacche" id="tacche"></g>
+          <text x="100" y="30" class="card n">N</text><text x="172" y="106" class="card">E</text><text x="100" y="180" class="card">S</text><text x="28" y="106" class="card">O</text>
+        </g>
+        <path d="M100 14 L110 40 L100 34 L90 40 Z" class="indice"/>
+        <rect x="88" y="70" width="24" height="60" rx="5" class="telefono"/>
+      </svg>
+      <div class="lettura"><b id="mis-gradi">—</b><span id="mis-dir"></span></div>
+    </div>
+    <div class="stabile"><i id="mis-stab"></i></div>
+    <p class="nota" id="mis-nota">In attesa della bussola…</p>
+    <p class="nota" id="mis-gps">Posizione del balcone: in attesa del GPS…</p>
+    <p class="domanda">Il balcone si affaccia su:</p>
+    <div class="scelte tre" role="radiogroup" aria-label="Affaccio del balcone" id="mis-aff">
+      <button role="radio" aria-checked="false" data-v="strada">Strada o spazio aperto</button>
+      <button role="radio" aria-checked="false" data-v="cortile">Cortile interno</button>
+      <button role="radio" aria-checked="false" data-v="non_so">Non so</button>
+    </div>
+    <div class="foto" id="mis-foto">
+      <p class="domanda">Foto dal balcone <small>(facoltativa)</small></p>
+      <p class="nota">Con la schiena alla casa, fotografa quello che hai davanti: si vede subito se ci sono palazzi o alberi che coprono.</p>
+      <img class="foto-img" alt="" hidden>
+      <div class="foto-az">
+        <label class="secondario foto-bt"><span class="foto-t">Scatta una foto</span><input class="nascosto" type="file" accept="image/*" capture="environment"></label>
+        <label class="testo foto-gal">Scegli dalla galleria<input class="nascosto" type="file" accept="image/*"></label>
+        <button type="button" class="testo foto-via" hidden>Togli la foto</button>
+      </div>
+      <p class="nota foto-stato" aria-live="polite"></p>
+    </div>
+    <label class="campo">Nome <input id="mis-nome" placeholder="es. Balcone della cucina"></label>
+    <button class="primario" id="mis-salva" disabled>Salva questa direzione</button>
+    <button class="testo" id="mis-manuale">La bussola non funziona: scelgo la direzione a mano</button>
+    <div class="scelte otto" id="mis-otto" hidden></div>
+    <button class="testo" id="mis-annulla">Annulla</button>
+  </section>
+
+  <!-- 5. riepilogo e invio -->
+  <section class="schermo" data-s="6" hidden>
+    <h1>Tutto pronto</h1>
+    <dl class="riepilogo" id="riepilogo"></dl>
+    <button class="primario" id="invia">Invia la verifica</button>
+    <button class="secondario" id="salva">Salva il file</button>
+    <button class="testo" id="copia">Copia i dati</button>
+    <p class="nota" id="invio-stato"></p>
+    <div class="esito-box" id="esito-box" hidden></div>
+    <details><summary>Dati che verranno inviati</summary><pre id="json"></pre></details>
+    <button class="testo" id="ricomincia">Nuova verifica</button>
+  </section>
+</main>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

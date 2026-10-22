@@ -1,0 +1,6 @@
+{
+  "appId": "it.eolo.verificafwa",
+  "appName": "Verifica FWA",
+  "webDir": "www",
+  "android": { "allowMixedContent": false }
+}
