@@ -1,0 +1,30 @@
+# Costruisce l'APK di prova (debug) a ogni modifica o a mano da Actions > "APK Android" > Run workflow.
+# L'APK si scarica dalla pagina dell'esecuzione, sezione Artifacts.
+name: APK Android
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npx cap sync android
+      - name: Compila l'APK
+        run: |
+          chmod +x android/gradlew
+          cd android && ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verifica-fwa-apk
+          path: android/app/build/outputs/apk/debug/*.apk
