@@ -104,8 +104,18 @@
     $('gps-stato').textContent = 'Posizione non disponibile';
     $('gps-nota').textContent = (e && e.code === 1) ? 'Hai negato il permesso alla posizione: abilitalo nelle impostazioni del telefono.' : 'Controlla che il GPS sia acceso e riprova all\'aperto o vicino a una finestra.';
   }
+  var tGps = null;
+  function controlloGps() {                                 // nessuna lettura dopo qualche secondo: si spiega cosa fare
+    clearTimeout(tGps);
+    tGps = setTimeout(function () {
+      if (letture.length || (schermo !== 1 && schermo !== 5)) return;
+      var t = window.__sim ? 'Nel simulatore il telefono riceve il GPS solo dopo che hai scelto la casa del cliente: «Scegli sul 3D» oppure «A caso».'
+        : 'Il GPS non risponde: controlla che la posizione del telefono sia attiva e che all\'app (o al browser) sia permesso usarla, poi premi «Rileva la posizione». Nel browser serve una pagina https.';
+      if (schermo === 1) { $('gps-stato').textContent = 'In attesa del GPS'; $('gps-nota').textContent = t; } else $('mis-gps').textContent = t;
+    }, window.__sim ? 2500 : 15000);
+  }
   function avviaGps() {
-    letture = []; mostraGps();
+    letture = []; mostraGps(); controlloGps();
     if (nativo && P.Geolocation) {
       // Android: nel plugin "timeout" e' anche l'intervallo fra due posizioni; con 1 s il GPS resta acceso come in Google Maps
       P.Geolocation.requestPermissions().catch(function () { return null; }).then(function (perm) {
@@ -148,6 +158,23 @@
   function mostraPiano() { $('piano').textContent = stato.piano; $('piano-nome').textContent = nomePiano(stato.piano); $('piani-ed').value = stato.pianiEd || ''; }
   $('piano-meno').addEventListener('click', function () { stato.piano = Math.max(0, stato.piano - 1); mostraPiano(); salvaBozza(); });
   $('piano-piu').addEventListener('click', function () { stato.piano = Math.min(40, stato.piano + 1); mostraPiano(); salvaBozza(); });
+  // barometro (solo nell'APK, se il telefono lo ha): pressione al portone e in casa -> dislivello -> piano (3 m a piano)
+  var Baro = nativo && Cap && typeof Cap.registerPlugin === 'function' ? Cap.registerPlugin('Barometro') : null, baroP0 = null;
+  if (Baro) Baro.disponibile().then(function (r) { $('baro').hidden = !(r && r.disponibile); }).catch(function () {});
+  function leggiBaro(bt, fatto) {
+    var t = bt.textContent; bt.disabled = true; bt.textContent = 'Resta fermo, misuro…';
+    Baro.leggi({ millisecondi: 4000 }).then(function (r) { bt.textContent = t; fatto(r.hPa); }).catch(function (e) { bt.textContent = t; bt.disabled = false; $('baro-t').textContent = 'Misura non riuscita: ' + (e && e.message ? e.message : e); });
+  }
+  if (Baro) {
+    $('baro-p0').addEventListener('click', function () { leggiBaro($('baro-p0'), function (p) { baroP0 = { hPa: p, t: Date.now() }; $('baro-p0').disabled = false; $('baro-p1').disabled = false; $('baro-t').textContent = 'Portone: ' + p.toFixed(2) + ' hPa. Ora torna in casa e premi «Sono tornato in casa».'; }); });
+    $('baro-p1').addEventListener('click', function () { leggiBaro($('baro-p1'), function (p) {
+      var dh = 8434 * Math.log(baroP0.hPa / p), min = (Date.now() - baroP0.t) / 60000, pi = Math.max(0, Math.min(40, Math.round(dh / 3)));
+      stato.baro = { hPa_portone: +baroP0.hPa.toFixed(2), hPa_casa: +p.toFixed(2), dislivello_m: Math.round(dh * 10) / 10, piano_stimato: pi, minuti: Math.round(min * 10) / 10 };
+      if (min <= 20) { stato.piano = pi; mostraPiano(); }
+      $('baro-p1').disabled = false; salvaBozza();
+      $('baro-t').textContent = (min > 20 ? 'Sono passati ' + Math.round(min) + ' minuti fra le due misure: il tempo cambia la pressione, ripeti partendo dal portone. ' : '') + 'Sei salito di ' + (Math.round(dh * 10) / 10).toFixed(1).replace('.', ',') + ' m: circa ' + nomePiano(pi) + (min <= 20 ? ' (impostato qui sopra, puoi correggerlo).' : '.');
+    }); });
+  }
   $('piani-ed').addEventListener('input', function () { var v = parseInt(this.value, 10); stato.pianiEd = v > 0 ? v : null; salvaBozza(); });
 
   // ---------- 3. tetto ----------
@@ -191,7 +218,7 @@
     $('mis-tit').textContent = 'Balcone ' + (stato.balconi.length + 1);
     $('mis-nome').value = ''; $('mis-salva').disabled = true; $('mis-gradi').textContent = '—'; $('mis-dir').textContent = '';
     $('mis-otto').hidden = true; $('mis-nota').textContent = 'In attesa della bussola…'; $('mis-stab').style.width = '0';
-    posBal = null; letture = []; affaccio = null; fotoBal = null; fotoBalcone.mostra(); $('mis-gps').textContent = 'Posizione del balcone: in attesa del GPS…';
+    posBal = null; letture = []; affaccio = null; confermaLontano = false; inSospeso = null; $('mis-lontano').hidden = true; fotoBal = null; fotoBalcone.mostra(); $('mis-gps').textContent = 'Posizione del balcone: in attesa del GPS…';
     document.querySelectorAll('#mis-aff button').forEach(function (b) { b.setAttribute('aria-checked', 'false'); });
     vai(5); destGps = 'balcone'; fermaGps(); avviaGps();
     var D = window.DeviceOrientationEvent;
@@ -248,10 +275,23 @@
   document.querySelectorAll('#mis-aff button').forEach(function (b) { b.addEventListener('click', function () {
     affaccio = b.dataset.v; document.querySelectorAll('#mis-aff button').forEach(function (x) { x.setAttribute('aria-checked', String(x === b)); });
   }); });
+  // posizione del balcone lontana da quella della casa (oltre la somma delle due precisioni + 5 m): forse e' il balcone
+  // sbagliato o una lettura cattiva; il cliente ripete o conferma
+  var inSospeso = null, confermaLontano = false;
+  function distanzaM(a, b) { var mLat = 111320, mLon = 111320 * Math.cos(a.lat * Math.PI / 180); return Math.hypot((a.lat - b.lat) * mLat, (a.lon - b.lon) * mLon); }
+  $('mis-ripeti').addEventListener('click', function () { $('mis-lontano').hidden = true; inSospeso = null; posBal = null; fermaGps(); destGps = 'balcone'; avviaGps(); $('mis-gps').textContent = 'Posizione del balcone: nuova lettura, resta all\'aperto qualche secondo…'; });
+  $('mis-conferma').addEventListener('click', function () { $('mis-lontano').hidden = true; confermaLontano = true; if (inSospeso) salvaBalcone.apply(null, inSospeso); });
   function salvaBalcone(vero, mag, disp, manuale) {
     var nome = $('mis-nome').value.trim() || ('Balcone ' + (stato.balconi.length + 1)), pb = posBal && posBal.acc <= C.precisioneMassima ? posBal : null;
+    var dCasa = pb && stato.pos ? distanzaM(pb, stato.pos) : null;
+    if (dCasa != null && dCasa > stato.pos.acc + pb.acc + 5 && !confermaLontano) {
+      inSospeso = [vero, mag, disp, manuale];
+      $('mis-lontano-t').textContent = 'Il balcone risulta a ' + Math.round(dCasa) + ' m dal punto della casa (precisioni ± ' + Math.round(stato.pos.acc) + ' m e ± ' + Math.round(pb.acc) + ' m). Sei sul balcone di casa tua? Ripeti la posizione restando fermo all\'aperto, oppure salva lo stesso.';
+      $('mis-lontano').hidden = false; $('mis-lontano').scrollIntoView({ behavior: 'smooth', block: 'center' }); return;
+    }
+    confermaLontano = false; inSospeso = null; $('mis-lontano').hidden = true;
     stato.balconi.push({ nome: nome, azimut: Math.round(vero * 10) / 10, azimut_magnetico: mag == null ? null : Math.round(mag * 10) / 10, dispersione_gradi: Math.round(disp * 10) / 10, manuale: !!manuale,
-      lat: pb ? +pb.lat.toFixed(7) : null, lon: pb ? +pb.lon.toFixed(7) : null, accuratezza_m: pb ? Math.round(pb.acc * 10) / 10 : null, affaccio: affaccio && affaccio !== 'non_so' ? affaccio : null, foto: fotoBal || null });
+      lat: pb ? +pb.lat.toFixed(7) : null, lon: pb ? +pb.lon.toFixed(7) : null, accuratezza_m: pb ? Math.round(pb.acc * 10) / 10 : null, affaccio: affaccio && affaccio !== 'non_so' ? affaccio : null, foto: fotoBal || null, distanza_casa_m: dCasa != null ? Math.round(dCasa) : null });
     fotoBal = null; salvaBozza(); vai(4);
   }
 
@@ -262,7 +302,8 @@
       data: new Date().toISOString(), lat: stato.pos ? +stato.pos.lat.toFixed(7) : null, lon: stato.pos ? +stato.pos.lon.toFixed(7) : null,
       accuratezza_m: stato.pos ? Math.round(stato.pos.acc * 10) / 10 : null, piano: stato.piano, piani_edificio: stato.pianiEd,
       tetto: stato.tetto === 'si' ? true : stato.tetto === 'no' ? false : null,
-      balconi: stato.balconi.map(function (b) { return { nome: b.nome, azimut: b.azimut, azimut_magnetico: b.azimut_magnetico, dispersione_gradi: b.dispersione_gradi, manuale: b.manuale, lat: b.lat, lon: b.lon, accuratezza_m: b.accuratezza_m, affaccio: b.affaccio, foto: b.foto || null }; }),
+      balconi: stato.balconi.map(function (b) { return { nome: b.nome, azimut: b.azimut, azimut_magnetico: b.azimut_magnetico, dispersione_gradi: b.dispersione_gradi, manuale: b.manuale, lat: b.lat, lon: b.lon, accuratezza_m: b.accuratezza_m, affaccio: b.affaccio, foto: b.foto || null, distanza_casa_m: b.distanza_casa_m != null ? b.distanza_casa_m : null }; }),
+      barometro: stato.baro || null,
       tetto_foto: stato.tetto === 'si' && stato.tettoFoto ? stato.tettoFoto : null,
       declinazione: C.declinazione, app: 'verifica-fwa ' + C.versione, dispositivo: nativo ? 'app Android' : 'browser'
     };
@@ -271,7 +312,7 @@
     var o = ordine();
     $('riepilogo').innerHTML = '<dt>Ordine</dt><dd>' + esc(o.id) + '</dd>' +
       '<dt>Posizione</dt><dd>' + (o.lat != null ? o.lat.toFixed(5) + ', ' + o.lon.toFixed(5) + ' (± ' + Math.round(o.accuratezza_m) + ' m)' : 'mancante') + '</dd>' +
-      '<dt>Piano</dt><dd>' + nomePiano(o.piano) + (o.piani_edificio ? ' di ' + o.piani_edificio : '') + '</dd>' +
+      '<dt>Piano</dt><dd>' + nomePiano(o.piano) + (o.piani_edificio ? ' di ' + o.piani_edificio : '') + (o.barometro ? ' · barometro: salita di ' + String(o.barometro.dislivello_m).replace('.', ',') + ' m' : '') + '</dd>' +
       '<dt>Tetto</dt><dd>' + (o.tetto === true ? 'disponibile' : o.tetto === false ? 'non disponibile' : 'non so') + (o.tetto_foto ? '<br><img class="mini" src="' + o.tetto_foto + '" alt="Foto dal tetto">' : '') + '</dd>' +
       '<dt>Balconi</dt><dd>' + (o.balconi.length ? o.balconi.map(function (b) { return esc(b.nome) + ': ' + NOMI_DIR[dirDi(b.azimut)] + ' (' + Math.round(b.azimut) + '°)' + (b.affaccio ? ', su ' + (b.affaccio === 'cortile' ? 'cortile interno' : 'strada') : '') + (b.lat != null ? ', posizione ± ' + Math.round(b.accuratezza_m) + ' m' : '') + (b.foto ? '<br><img class="mini" src="' + b.foto + '" alt="Foto di ' + esc(b.nome) + '">' : ''); }).join('<br>') : 'nessuno') + '</dd>';
     $('json').textContent = JSON.stringify(o, function (k, v) { return typeof v === 'string' && v.indexOf('data:image') === 0 ? '[foto JPEG, ' + kB(v) + ' kB]' : v; }, 1);
@@ -314,7 +355,7 @@
       var r = document.createRange(); r.selectNodeContents($('json')); var s = getSelection(); s.removeAllRanges(); s.addRange(r); esito('Seleziona e copia il testo qui sotto.');
     });
   });
-  $('ricomincia').addEventListener('click', function () { $('esito-box').hidden = true; stato = { codice: '', pos: null, piano: 0, pianiEd: null, tetto: null, tettoFoto: null, balconi: [] }; salvaBozza(); $('codice').value = ''; mostraTetto(); esito(''); vai(0); });
+  $('ricomincia').addEventListener('click', function () { $('esito-box').hidden = true; stato = { codice: '', pos: null, piano: 0, pianiEd: null, tetto: null, tettoFoto: null, balconi: [], baro: null }; baroP0 = null; $('baro-t').textContent = ''; $('baro-p1').disabled = true; salvaBozza(); $('codice').value = ''; mostraTetto(); esito(''); vai(0); });
 
   if ('serviceWorker' in navigator && location.protocol === 'https:' && !nativo) navigator.serviceWorker.register('sw.js').catch(function () {});
   // risposta del sistema degli ordini (simulatore o server): esito della prequalifica mostrato al cliente

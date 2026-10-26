@@ -1,6 +1,6 @@
 // Impostazioni dell'app (si cambiano senza toccare il resto del codice)
 window.CONFIG = {
-  versione: '1.1.1',
+  versione: '1.2.0',
   // declinazione magnetica (gradi, positiva verso est): la bussola del telefono indica il nord magnetico, il modello 3D
   // usa il nord geografico. In Campania nel 2026 e' circa +4,5°; in Italia va da circa +2° (ovest) a +6° (sud-est).
   declinazione: 4.5,

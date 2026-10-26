@@ -3,7 +3,8 @@
 Il cliente, prima che l'ordine entri, apre l'app e in due minuti raccoglie:
 
 1. **posizione** della casa (GPS ad alta precisione, si accetta sotto i 30 m, consigliato sotto i 10 m);
-2. **piano** dell'abitazione (0 = piano terra) e, se lo sa, i piani dell'edificio;
+2. **piano** dell'abitazione (0 = piano terra) e, se lo sa, i piani dell'edificio; nell'APK, se il telefono ha il
+   **barometro**, il piano si può misurare: una lettura al portone e una in casa danno il dislivello (3 m a piano);
 3. **tetto** o lastrico disponibile per l'antenna (sì / no / non so);
 4. **balconi**: per ognuno l'app guida il cliente fuori, con il telefono in piano e la parte alta rivolta verso l'esterno,
    e registra con la bussola l'**esposizione** (gradi dal nord geografico) quando la lettura è stabile;
@@ -48,13 +49,17 @@ Per provare la PWA basta servire `www/` in HTTPS (o `localhost`): `npx serve www
   "lat": 40.887946, "lon": 14.187958, "accuratezza_m": 6,
   "piano": 2, "piani_edificio": 4, "tetto": false,
   "balconi": [ { "nome": "Balcone del soggiorno", "azimut": 10, "azimut_magnetico": 5.5, "dispersione_gradi": 1.1, "manuale": false,
-                 "lat": 40.887981, "lon": 14.187905, "accuratezza_m": 4, "affaccio": "strada", "foto": "data:image/jpeg;base64,..." } ],
+                 "lat": 40.887981, "lon": 14.187905, "accuratezza_m": 4, "affaccio": "strada", "foto": "data:image/jpeg;base64,...", "distanza_casa_m": 6 } ],
   "tetto_foto": null,
+  "barometro": { "hPa_portone": 1013.2, "hPa_casa": 1012.08, "dislivello_m": 9.3, "piano_stimato": 3, "minuti": 2.5 },
   "declinazione": 4.5, "app": "verifica-fwa 1.0.0", "dispositivo": "app Android"
 }
 ```
 `azimut` è la direzione verso cui guarda il balcone (uscendo dalla casa), in gradi dal nord geografico. `lat`/`lon`/`accuratezza_m`
 del balcone sono la posizione presa sul balcone durante la misura; `affaccio` è `strada`, `cortile` o `null` (non so).
+`distanza_casa_m` è la distanza fra la posizione del balcone e quella della casa: se supera la somma delle due precisioni
+più 5 m l'app chiede di ripetere la misura o di confermarla. `barometro` c'è solo se il piano è stato misurato con il
+barometro (APK); lo strumento usa quel piano al posto di quello dichiarato se le due letture distano meno di 20 minuti.
 `foto` (balcone) e `tetto_foto` sono immagini JPEG in base64 (`data:image/jpeg;base64,...`) oppure `null`.
 Servono a distinguere balconi con la stessa esposizione ma esiti diversi (per esempio sulla strada e sul cortile interno).
 Lo strumento accetta anche elenchi di ordini (`[ ... ]` o `{ "ordini": [ ... ] }`) e CSV `id;lat;lon;piano;tetto;balconi`
@@ -72,4 +77,7 @@ con gli azimut separati da `|`.
   workflow il passo `assembleRelease` con la firma; l'APK debug serve solo per le prove.
 - **Foto**: nell'APK la fotocamera si apre con l'app Fotocamera del telefono (nessun permesso aggiuntivo); nella PWA con il
   selettore del browser. Con molte foto il file della verifica cresce (1–2 MB): va bene per mail e WhatsApp.
+- **Barometro**: plugin dell'app (`android/app/src/main/java/it/eolo/verificafwa/BarometroPlugin.java`, registrato in
+  `MainActivity`); nella PWA non c'è (i browser non leggono la pressione). Dislivello = 8434 × ln(p portone / p casa) m.
+- **GPS**: una posizione al secondo (nel plugin Android `timeout` è anche l'intervallo) e media delle letture degli ultimi 20 s.
 - L'`appId` è `it.eolo.verificafwa` (in `capacitor.config.json`): cambialo prima di pubblicare se serve.

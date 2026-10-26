@@ -59,6 +59,13 @@
     </div>
     <p class="piano-nome" id="piano-nome">piano terra</p>
     <label class="campo">Quanti piani ha l'edificio? <small>(facoltativo)</small><input id="piani-ed" type="number" min="1" max="40" inputmode="numeric" placeholder="es. 5"></label>
+    <div class="riquadro baro" id="baro" hidden>
+      <p class="domanda">Misura il piano con il telefono <small>(facoltativo)</small></p>
+      <p class="nota">Il telefono ha un barometro che sente quanto sei salito. Scendi al portone, premi il primo pulsante, poi torna in casa e premi il secondo: il piano si imposta da solo.</p>
+      <button class="secondario" id="baro-p0">Sono al portone (piano terra)</button>
+      <button class="secondario" id="baro-p1" disabled>Sono tornato in casa</button>
+      <p class="nota" id="baro-t" aria-live="polite"></p>
+    </div>
     <button class="primario" data-vai="3">Avanti</button>
   </section>
 
@@ -134,6 +141,11 @@
         <button type="button" class="testo foto-via" hidden>Togli la foto</button>
       </div>
       <p class="nota foto-stato" aria-live="polite"></p>
+    </div>
+    <div class="esito-box forse" id="mis-lontano" hidden>
+      <b>La posizione del balcone non torna con quella della casa</b>
+      <span id="mis-lontano-t"></span>
+      <div class="scelte due"><button id="mis-ripeti">Ripeti la posizione</button><button id="mis-conferma">Salva comunque</button></div>
     </div>
     <label class="campo">Nome <input id="mis-nome" placeholder="es. Balcone della cucina"></label>
     <button class="primario" id="mis-salva" disabled>Salva questa direzione</button>
