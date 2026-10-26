@@ -70,15 +70,34 @@
   $('codice').addEventListener('input', function () { stato.codice = this.value.trim(); salvaBozza(); });
 
   // ---------- 1. posizione ----------
-  var idGps = null, idCap = null, destGps = 'casa', posBal = null;
+  var idGps = null, idCap = null, destGps = 'casa', posBal = null, letture = [], soloApprossimata = false;
+  // con il telefono fermo si fa la media delle letture degli ultimi 20 secondi: si scartano quelle molto meno precise
+  // della migliore e quelle lontane dalle altre; la precisione mostrata resta quella della lettura migliore (gli errori
+  // del GPS di letture vicine nel tempo sono legati fra loro: la media toglie il tremolio, non promette di piu')
+  var FINESTRA_MS = 20000;
+  function mediaLetture() {
+    var ora = Date.now(); letture = letture.filter(function (p) { return ora - p.t <= FINESTRA_MS; });
+    if (!letture.length) return null;
+    var best = Math.min.apply(null, letture.map(function (p) { return p.acc; }));
+    var buone = letture.filter(function (p) { return p.acc <= Math.max(best * 1.5, best + 3); });
+    var num = function (a, b) { return a - b; }, lat0 = buone.map(function (p) { return p.lat; }).sort(num)[buone.length >> 1], lon0 = buone.map(function (p) { return p.lon; }).sort(num)[buone.length >> 1];
+    var mLat = 111320, mLon = 111320 * Math.cos(lat0 * Math.PI / 180);
+    buone = buone.filter(function (p) { return Math.hypot((p.lat - lat0) * mLat, (p.lon - lon0) * mLon) <= Math.max(2 * p.acc, 3); });
+    if (!buone.length) buone = [letture.reduce(function (a, b) { return b.acc < a.acc ? b : a; })];
+    var sw = 0, la = 0, lo = 0, q = 0, nq = 0;
+    buone.forEach(function (p) { var w = 1 / (p.acc * p.acc); sw += w; la += w * p.lat; lo += w * p.lon; if (p.quota != null) { q += p.quota; nq++; } });
+    return { lat: la / sw, lon: lo / sw, acc: best, quota: nq ? q / nq : null, n: buone.length, t: ora };
+  }
   function suPosizione(c) {
-    var p = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, quota: c.altitude, t: Date.now() };
-    if (destGps === 'balcone') {                              // posizione del balcone: sul balcone il GPS vede il cielo, si tiene la migliore
-      if (!posBal || p.acc <= posBal.acc) posBal = p;
-      $('mis-gps').textContent = 'Posizione del balcone: ± ' + Math.round(posBal.acc) + ' m' + (posBal.acc <= 10 ? ' ✓' : ' (resta qualche secondo all\'aperto)');
+    if (!c || !isFinite(c.latitude) || !isFinite(c.longitude)) return;
+    letture.push({ lat: c.latitude, lon: c.longitude, acc: c.accuracy || 99, quota: c.altitude, t: Date.now() });
+    var m = mediaLetture(); if (!m) return;
+    if (destGps === 'balcone') {                              // posizione del balcone: sul balcone il GPS vede il cielo
+      posBal = m;
+      $('mis-gps').textContent = 'Posizione del balcone: ± ' + Math.round(m.acc) + ' m' + (m.n > 1 ? ' (media di ' + m.n + ' letture)' : '') + (m.acc <= 10 ? ' ✓' : ' (resta qualche secondo all\'aperto)');
       return;
     }
-    if (!stato.pos || p.acc <= stato.pos.acc || Date.now() - stato.pos.t > 120000) stato.pos = p;
+    stato.pos = m;
     mostraGps();
   }
   function errGps(e) {
@@ -86,15 +105,23 @@
     $('gps-nota').textContent = (e && e.code === 1) ? 'Hai negato il permesso alla posizione: abilitalo nelle impostazioni del telefono.' : 'Controlla che il GPS sia acceso e riprova all\'aperto o vicino a una finestra.';
   }
   function avviaGps() {
-    mostraGps();
+    letture = []; mostraGps();
     if (nativo && P.Geolocation) {
-      P.Geolocation.requestPermissions().catch(function () {}).then(function () {
-        return P.Geolocation.watchPosition({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }, function (pos, err) { if (err) errGps(err); else if (pos) suPosizione(pos.coords); });
+      // Android: nel plugin "timeout" e' anche l'intervallo fra due posizioni; con 1 s il GPS resta acceso come in Google Maps
+      P.Geolocation.requestPermissions().catch(function () { return null; }).then(function (perm) {
+        soloApprossimata = !!(perm && perm.location !== 'granted' && perm.coarseLocation === 'granted');
+        avvisoApprossimata();
+        return P.Geolocation.watchPosition({ enableHighAccuracy: true, timeout: 1000, minimumUpdateInterval: 500, maximumAge: 0 }, function (pos, err) { if (err) errGps(err); else if (pos) suPosizione(pos.coords); });
       }).then(function (id) { idCap = id; });
       return;
     }
     if (!navigator.geolocation) { errGps(); return; }
     idGps = navigator.geolocation.watchPosition(function (p) { suPosizione(p.coords); }, errGps, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  }
+  function avvisoApprossimata() {
+    if (!soloApprossimata) return;
+    var t = 'Il telefono dà all\'app solo la posizione approssimativa. Apri Impostazioni → App → Verifica FWA → Autorizzazioni → Posizione e attiva «Usa posizione esatta».';
+    $('gps-nota').textContent = t; $('mis-gps').textContent = t;
   }
   function fermaGps() {
     if (idGps != null) navigator.geolocation.clearWatch(idGps); idGps = null;
@@ -106,7 +133,9 @@
     var buona = p.acc <= C.precisioneBuona, ok = p.acc <= C.precisioneMassima;
     $('gps-stato').textContent = buona ? 'Posizione precisa' : ok ? 'Posizione accettabile' : 'Posizione ancora imprecisa';
     $('gps-num').textContent = p.lat.toFixed(6) + ', ' + p.lon.toFixed(6);
-    $('gps-acc').textContent = 'precisione ± ' + Math.round(p.acc) + ' m';
+    $('gps-acc').textContent = 'precisione ± ' + Math.round(p.acc) + ' m' + (p.n > 1 ? ' · media di ' + p.n + ' letture: tieni il telefono fermo' : '');
+    if (p.acc > 500 && !soloApprossimata) $('gps-nota').textContent = 'Precisione molto bassa: controlla che al browser o all\'app sia concessa la posizione esatta e che il GPS sia acceso.';
+    else if (!soloApprossimata) $('gps-nota').textContent = 'Aspetta che la precisione scenda sotto i ' + C.precisioneBuona + ' m (al massimo ' + C.precisioneMassima + ' m), con il telefono fermo.';
     var b = $('gps-barra'); b.style.width = Math.max(8, Math.min(100, 100 * C.precisioneBuona / Math.max(p.acc, 1))) + '%';
     b.style.background = buona ? 'var(--ok)' : ok ? 'var(--warn)' : 'var(--bad)';
     $('gps-ok').disabled = !ok;
@@ -162,7 +191,7 @@
     $('mis-tit').textContent = 'Balcone ' + (stato.balconi.length + 1);
     $('mis-nome').value = ''; $('mis-salva').disabled = true; $('mis-gradi').textContent = '—'; $('mis-dir').textContent = '';
     $('mis-otto').hidden = true; $('mis-nota').textContent = 'In attesa della bussola…'; $('mis-stab').style.width = '0';
-    posBal = null; affaccio = null; fotoBal = null; fotoBalcone.mostra(); $('mis-gps').textContent = 'Posizione del balcone: in attesa del GPS…';
+    posBal = null; letture = []; affaccio = null; fotoBal = null; fotoBalcone.mostra(); $('mis-gps').textContent = 'Posizione del balcone: in attesa del GPS…';
     document.querySelectorAll('#mis-aff button').forEach(function (b) { b.setAttribute('aria-checked', 'false'); });
     vai(5); destGps = 'balcone'; fermaGps(); avviaGps();
     var D = window.DeviceOrientationEvent;
